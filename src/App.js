@@ -4,10 +4,10 @@ import "./App.css"
 import {useEffect, useRef, useState} from "react";
 import Calculator from "./calc/Calculator";
 
-// TODO control z
 // TODO responsive
+
 function App() {
-    let canvas;
+    let canvas = useRef(null);
 
     const [brushColor, setBrushColor] = useState("#000000");
     const [originalColor, setOriginalColor] = useState("#000000");
@@ -26,22 +26,20 @@ function App() {
             interval = setInterval(() => {
                 setTime((prevTime) => prevTime + 1);
             }, 1000);
-        } else if (!running) {
-            clearInterval(interval);
         }
         return () => clearInterval(interval);
     }, [running]);
 
     const keydownHandler = (e) => {
         if(e.key === 'z' && e.ctrlKey) {
-            canvas.undo();
+            canvas.current.undo();
         }
     };
     useEffect(() => {
         document.addEventListener('keydown', (e) => {
             keydownHandler(e);
         });
-    }, [canvas]);
+    }, []);
 
     let inputFileRef = useRef(null);
     const [inputFile, setInputFile] = useState(null)
@@ -144,7 +142,7 @@ function App() {
                     </Row>
                 </Modal>
                 <Row className={"up"} style={{marginBottom: "2%"}}>
-                    <CanvasDraw ref={canvasDraw => (canvas = canvasDraw)} brushRadius={brushSize} brushColor={brushColor}
+                    <CanvasDraw ref={canvasDraw => (canvas.current = canvasDraw)} brushRadius={brushSize} brushColor={brushColor}
                                 canvasWidth={canvasWidth} canvasHeight={canvasHeight} imgSrc={inputFile != null ? URL.createObjectURL(inputFile) : ""}
                     enablePanAndZoom={panAndZoom}/>
                 </Row>
@@ -189,11 +187,11 @@ function App() {
                         setBrushColor(setColor(brushColor, true))
                         setPanAndZoom(false)
                     }}></i>
-                    <i className="fa-solid fa-eraser" onClick={() => canvas.undo()}></i>
+                    <i className="fa-solid fa-eraser" onClick={() => canvas.current.undo()}></i>
                 </Row>
                 <Row>
-                    <i className="fa-solid fa-trash" onClick={() => canvas.eraseAll()}></i>
-                    <i className="fa-solid fa-rotate-right"  onClick={() => canvas.undo()}></i>
+                    <i className="fa-solid fa-trash" onClick={() => canvas.current.eraseAll()}></i>
+                    <i className="fa-solid fa-rotate-right"  onClick={() => canvas.current.undo()}></i>
                     <i className="fa-solid fa-arrow-pointer" onClick={() => setPanAndZoom(true)}></i>
                 </Row>
                 <Row>
