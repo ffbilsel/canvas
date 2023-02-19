@@ -1,27 +1,102 @@
-import CanvasDraw from "react-canvas-draw";
 import {Button, Col, Modal, Popover, Row} from "antd";
 import "./App.css"
-import {useEffect, useRef, useState} from "react";
+import {createRef, useEffect, useRef, useState} from "react";
 import Calculator from "./calc/Calculator";
 
 // TODO responsive
 // TODO pause
 // TODO record
 
-function App() {
-    let canvas = useRef(null);
+export default function App() {
 
     const [brushColor, setBrushColor] = useState("#000000");
     const [originalColor, setOriginalColor] = useState("#000000");
     const [brushSize, setBrushSize] = useState(2);
-    const [panAndZoom, setPanAndZoom] = useState(false);
     const [isPen, setPen] = useState(true);
     const [time, setTime] = useState(0);
     const [running, setRunning] = useState(false);
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isModalOpen, setModalOpen] = useState(false);
+    const [isClicked, setClicked] = useState(false)
+    const [inputFile, setInputFile] = useState(null)
+    const [panAndZoom, setPanAndZoom] = useState(false);
+
+    let inputFileRef = useRef(null);
     let mediaRecorder = useRef(null)
     let videoSource = useRef("")
-    const [coordinates, setCoordinates] = useState([0,0]);
+    let write = useRef([])
+    let clickPos = useRef([]);
+    let isText = useRef(false);
+    let text = useRef("")
+    let ctx = useRef(null);
+    let isEraser = useRef(false);
+    let drawType = useRef("none");
+
+    let canvas = createRef()
+
+    useEffect(() => {
+        ctx.current = canvas.current.getContext("2d");
+    }, [canvas])
+
+    useEffect(() => {
+        ctx.current.fillStyle = "#fff"
+        ctx.current.fillRect(0, 0, 2000, 2000);
+
+        document.addEventListener("mousedown", () => {
+            setClicked(true)
+
+        })
+        document.addEventListener("mouseup", () => {
+            setClicked(false)
+        })
+
+    }, [])
+
+    useEffect(() => {
+        console.log(inputFile)
+        if (!inputFile) {
+            return
+        }
+        let reader  = new FileReader();
+        reader.onload = function(e)  {
+            const img = new Image();
+            img.src = e.target.result;
+            ctx.current.drawImage(img, 0, 0);
+        }
+        reader.readAsDataURL(inputFile);
+
+    }, [inputFile])
+    useEffect(() => {
+        document.addEventListener("click", (e) => {
+
+            if (!isText.current && write.current.length > 0) {
+                isText.current = false
+                write.current = []
+            }
+        })
+    }, [isText])
+
+    useEffect(() => {
+        document.addEventListener('keyup', (e) => {
+            if(!isText.current && e.key === 'z' && e.ctrlKey) {
+                console.log()
+            }
+            if (write.current.length > 0) {
+                if (e.key === "Enter") {
+                     write.current = []
+                }
+                else {
+                    text.current += e.key
+                    let posx = write.current[0]
+                    let posy = write.current[1]
+                    ctx.current.fillStyle = brushColor
+                    ctx.current.font = "30px Arial";
+                    ctx.current.fillText(text.current.substring(0, text.current.includes('£') ? text.current.indexOf("£") : text.current.length), posx, posy);
+                    isText.current = false
+                }
+            }
+
+        });
+    }, [brushColor, isText])
 
     useEffect(() => {
 
@@ -34,35 +109,8 @@ function App() {
         return () => clearInterval(interval);
     }, [running]);
 
-    const keydownHandler = (e) => {
-        if(e.key === 'z' && e.ctrlKey) {
-            canvas.current.undo();
-        }
-    };
-    useEffect(() => {
-        document.addEventListener('keydown', (e) => {
-            keydownHandler(e);
-        });
-    }, []);
-
-    useEffect(() => {
-        let grid = canvas.current.canvas.interface
-        grid.addEventListener('mousedown', event => {
-            let rect = grid.getBoundingClientRect()
-            setCoordinates([event.clientX - rect.left, event.clientY - rect.top])
-        })
-        let ctx = canvas.current.canvas.temp.getContext("2d")
-        ctx.fillStyle = brushColor;
-        ctx.font = "30px Arial";
-        ctx.fillStyle="rgb(255,255,255)";
-        ctx.fillRect(0, 0, 2000, 2000);
-    }, [])
-
-    let inputFileRef = useRef(null);
-    const [inputFile, setInputFile] = useState(null)
     const canvasWidth = window.innerWidth * 0.7;
     const canvasHeight = window.innerHeight * 0.65;
-
 
     function setColor(color, isMarker) {
         // coerce values so ti is between 0 and 1.
@@ -75,9 +123,11 @@ function App() {
 
     async function createStream() {
 
+        URL.revokeObjectURL(videoSource.current); // clear from memory
+
         return await navigator.mediaDevices.getUserMedia({
             audio: true, video: false }).then(async (e) =>
-            new MediaStream([ ...canvas.current.canvas.temp.captureStream(60).getTracks(), ...e.getTracks()]))
+            new MediaStream([ ...canvas.current.captureStream(200).getTracks(), ...e.getTracks()]))
     }
 
     function startRecording(combined) {
@@ -115,7 +165,6 @@ function App() {
         videoSource.current = downloadLink.href
         document.body.appendChild(downloadLink);
         downloadLink.click();
-        URL.revokeObjectURL(blob); // clear from memory
         document.body.removeChild(downloadLink);
         setRunning(false);
     }
@@ -138,22 +187,148 @@ function App() {
                 </div>
             </Col>
             <Col className={"center"}>
-                <Modal open={isModalOpen} onOk={() => setIsModalOpen(false)} onCancel={() => setIsModalOpen(false)} width={850}
-                       footer={[<Button type={"primary"} onClick={() => setIsModalOpen(false)}>OK</Button>]} >
+                <Modal open={isModalOpen} onOk={() => setModalOpen(false)} onCancel={() => setModalOpen(false)} width={850}
+                       footer={[<Button type={"primary"} onClick={() => setModalOpen(false)}>OK</Button>]} >
                     <Row justify={"center"} align={"middle"} >
                         <video src={videoSource.current} controls style={{width: "720px", height: "100%"}}></video>
                     </Row>
                 </Modal>
                 <Row className={"up"} id={"canvasRow"} style={{marginBottom: "2%"}}>
-                    <CanvasDraw ref={canvasDraw => (canvas.current = canvasDraw)} brushRadius={brushSize} brushColor={brushColor}
-                                canvasWidth={canvasWidth} canvasHeight={canvasHeight} imgSrc={inputFile != null ? URL.createObjectURL(inputFile) : ""}
-                    enablePanAndZoom={panAndZoom}/>
+                    <canvas width={canvasWidth}  ref={canvas} height={canvasHeight} style={{border: "3px solid black", borderRadius: "6px"}}
+                            onMouseMove={(e) => {
+                                if (isText.current || !isClicked) {
+                                    return
+                                }
+                                let rect = e.target.getBoundingClientRect();
+                                let posx = e.clientX - rect.left;
+                                let posy = e.clientY - rect.top;
+
+                                if (isEraser.current) {
+                                    setBrushColor(setColor("#ffffff", false))
+                                }
+                                ctx.current.strokeStyle = brushColor;
+                                ctx.current.beginPath();
+
+                                ctx.current.lineWidth = brushSize * 3.75;
+                                ctx.current.lineCap = 'round';
+
+
+                                // The cursor to start drawing
+                                // moves to this coordinate
+                                ctx.current.moveTo(posx, posy);
+                                ctx.current.lineTo(posx , posy);
+
+                                // Draws the line.
+                                ctx.current.stroke();
+
+                            }
+                        }
+                    onClick={ (e) => {
+                        if (drawType.current !== "none") {
+                            let rect = e.target.getBoundingClientRect();
+                            clickPos.current.push(...[e.clientX - rect.left, e.clientY - rect.top])
+                        }
+
+                        if (drawType.current === "line" && clickPos.current.length === 4) {
+                            ctx.strokeStyle = brushColor
+                            ctx.current.lineWidth = brushSize * 3.75;
+                            ctx.current.beginPath();
+                            ctx.current.moveTo(clickPos.current[0], clickPos.current[1]);
+                            ctx.current.lineTo(clickPos.current[2], clickPos.current[3]);
+                            ctx.current.stroke();
+                            drawType.current = "none"
+                        }
+
+                        if (drawType.current === "square" && clickPos.current.length === 6) {
+                            ctx.current.fillStyle = brushColor
+                            let top = clickPos.current[1]
+                            let left = clickPos.current[0];
+                            let tm = top;
+                            let lm = left
+                            for (let i = 1; i < 3; i++) {
+                                top = Math.min(top, clickPos.current[i * 2 + 1])
+                                tm = Math.max(top, clickPos.current[i * 2 + 1])
+                                left = Math.min(left, clickPos.current[i * 2])
+                                lm = Math.max(lm, clickPos.current[i * 2])
+                            }
+                            ctx.current.fillRect(left, top, lm - left, tm - top);
+                            drawType.current = "none"
+                        }
+
+                        if (drawType.current === "rectangle" && clickPos.current.length === 4) {
+                            ctx.current.fillStyle = brushColor
+                            let top = clickPos.current[1]
+                            let left = clickPos.current[0];
+                            let tm = top;
+                            let lm = left
+                            for (let i = 1; i < 2; i++) {
+                                top = Math.min(top, clickPos.current[i * 2 + 1])
+                                tm = Math.max(top, clickPos.current[i * 2 + 1])
+                                left = Math.min(left, clickPos.current[i * 2])
+                                lm = Math.max(lm, clickPos.current[i * 2])
+                            }
+                            ctx.current.fillRect(left, top, lm - left, tm - top);
+                            drawType.current = "none"
+                        }
+
+                        if (drawType.current === "triangle" && clickPos.current.length === 6) {
+                            ctx.current.fillStyle = brushColor
+                            ctx.current.beginPath();
+                            ctx.current.moveTo(clickPos.current[0], clickPos.current[1])
+                            for (let i = 1; i < 3; i++) {
+                                ctx.current.lineTo(clickPos.current[i * 2], clickPos.current[i * 2 + 1]);
+                            }
+                            ctx.current.closePath();
+                            ctx.current.fill();
+                            drawType.current = "none"
+                        }
+
+                        if (drawType.current === "polygon") {
+                            ctx.current.fillStyle = brushColor
+                            ctx.current.strokeStyle = brushColor
+                            ctx.current.lineWidth = brushSize * 3.75;
+                            ctx.current.lineCap = 'round';
+
+
+
+                            if (clickPos.current.length === 2) {
+
+                                ctx.current.moveTo(clickPos.current[clickPos.current.length - 2], clickPos.current[clickPos.current.length - 1]);
+                                ctx.current.lineTo(clickPos.current[clickPos.current.length - 2], clickPos.current[clickPos.current.length - 1]);
+
+                                ctx.current.stroke();
+                                ctx.current.beginPath();
+                                ctx.current.moveTo(clickPos.current[0], clickPos.current[1])
+                            }
+                            else {
+                                ctx.current.lineTo(clickPos.current[clickPos.current.length - 2], clickPos.current[clickPos.current.length - 1])
+                                if (Math.pow(clickPos.current[0] - clickPos.current[clickPos.current.length - 2], 2) +
+                                    Math.pow(clickPos.current[1] - clickPos.current[clickPos.current.length - 1], 2) < 100) {
+                                    ctx.current.closePath();
+                                    ctx.current.fill();
+                                    drawType.current = "none"
+                                }
+                            }
+
+                        }
+
+
+
+                        if (isText.current) {
+                            let rect = e.target.getBoundingClientRect();
+                            let posx = e.clientX - rect.left;
+                            let posy = e.clientY - rect.top;
+                            write.current = [posx, posy]
+                        }
+
+                        }
+                    }/>
+                {/*     imgSrc={inputFile != null ? URL.createObjectURL(inputFile) : ""*/}
                 </Row>
                 <Row>
                     <Col style={{marginRight: "25%"}}>
                         <i className="fa-solid fa-circle-dot" onClick={async () => {
                             mediaRecorder.current = await startRecording(await createStream());
-                            console.log(mediaRecorder)
                         }}></i>
                         <label style={{marginRight: "15px"}}>Başlat</label>
                         <i className="fa-solid fa-square" onClick={() => {
@@ -162,7 +337,7 @@ function App() {
                         }}></i>
                         <label style={{marginRight: "15px"}}>Durdur</label>
                         <i className="fa-solid fa-clapperboard" onClick={() => {
-                            setIsModalOpen(true)
+                            setModalOpen(true)
                         }}></i>
                         <label style={{marginRight: "15px"}}>İzle</label>
                     </Col>
@@ -179,30 +354,37 @@ function App() {
             <Col className={"rightPane"} style={{marginLeft: "6%", width: "6%"}}>
                 <Row align={"middle"} justify={"center"}>
                     <i className="fa-solid fa-pen" onClick={() => {
+                        isText.current = false
                         setPen(true)
                         setBrushSize(2)
                         setBrushColor(setColor(originalColor, false))
                         setPanAndZoom(false)
+                        isEraser.current = false;
                     }}></i>
                     <i className="fa-solid fa-marker" onClick={() => {
+                        isText.current = false
                         setPen(false)
                         setBrushSize(10)
-                        setBrushColor(setColor(brushColor, true))
+                        setBrushColor(setColor(originalColor, true))
                         setPanAndZoom(false)
+                        isEraser.current = false;
                     }}></i>
-                    <i className="fa-solid fa-eraser" onClick={() => canvas.current.undo()}></i>
+                    <i className="fa-solid fa-eraser" onClick={() => isEraser.current = true}></i>
                 </Row>
                 <Row align={"middle"} justify={"center"}>
-                    <i className="fa-solid fa-trash" onClick={() => canvas.current.eraseAll()}></i>
-                    <i className="fa-solid fa-rotate-right"  onClick={() => canvas.current.undo()}></i>
-                    <i className="fa-solid fa-arrow-pointer" onClick={() => setPanAndZoom(true)}></i>
+                    <i className="fa-solid fa-trash" onClick={() => {
+                        ctx.current.fillStyle = "#fff"
+                        ctx.current.fillRect(0, 0, 2000, 2000);
+                    }}></i>
+                    <i className="fa-solid fa-rotate-right"  onClick={() => console.log()}></i>
+                    <i className="fa-solid fa-arrow-pointer" onClick={() => console.log()}></i>
                 </Row>
                 <Row align={"middle"} justify={"center"}>
                     <i className="fa-solid fa-copy"></i>
                     <i className="fa-solid fa-image" onClick={() => inputFileRef.current.click()}><input type='file' ref={inputFileRef} onChange={(e) => setInputFile(e.target.files[0])} style={{display: 'none'}}/></i>
                     <i className="fa-solid fa-a" onClick={() => {
-                        console.log(coordinates)
-                        canvas.current.canvas.grid.getContext("2d").fillText("Hello World", coordinates[0], coordinates[1]);
+                        isText.current = true
+                        text.current = ""
                     }
                     }></i>
 
@@ -255,17 +437,28 @@ function App() {
                 </Row>
                 <hr/>
                 <Row align={"middle"} justify={"center"}>
-                    <i className="fa-solid fa-arrows-left-right"></i>
-                    <i className="fa-solid fa-arrows-up-down"></i>
-                    <i className="fa-solid fa-square-arrow-up-right"></i>
+                    <i className="fa-solid fa-arrows-left-right" onClick={() => {
+                       clickPos.current = []
+                        drawType.current = "line"
+                    }}></i>
+                    <i className="fa-solid fa-caret-up" onClick={() => {
+                        clickPos.current = []
+                        drawType.current = "triangle"
+                    }}></i>
+                    <i className="fa-solid fa-square" onClick={() => {
+                        clickPos.current = []
+                        drawType.current = "square"
+                    }}></i>
                 </Row>
                 <Row align={"middle"} justify={"center"}>
-                    <i className="fa-solid fa-caret-up"></i>
-                    <i className="fa-solid fa-square"></i>
-                    <i className="fa-solid fa-rectangle-xmark"></i>
-                </Row>
-                <Row align={"middle"} justify={"center"}>
-                    <i className="fa-solid fa-draw-polygon"></i>
+                    <i className="fa-solid fa-rectangle-xmark" onClick={() => {
+                        clickPos.current = []
+                        drawType.current = "rectangle"
+                    }}></i>
+                    <i className="fa-solid fa-draw-polygon" onClick={() => {
+                        clickPos.current = []
+                        drawType.current = "polygon"
+                    }}></i>
                 </Row>
                 <hr/>
                 <Row align={"middle"} justify={"center"}>
@@ -283,4 +476,3 @@ function App() {
   );
 }
 
-export default App;
