@@ -9,31 +9,34 @@ import Calculator from "./calc/Calculator";
 
 export default function App() {
 
-    const [color, setColor] = useState("#000000");
-    const [brushColor, setBrushColor] = useState("#000000");
-    const [size, setSize] = useState(2);
-    const [brushSize, setBrushSize] = useState(2);
-    const [fontSize, setFontSize] = useState(15);
-
     const [time, setTime] = useState(0);
     const [running, setRunning] = useState(false);
     const [isModalOpen, setModalOpen] = useState(false);
     const [isClicked, setClicked] = useState(false)
-    const [zoom, setZoom] = useState(false);
 
+    let brushColor = useRef("#000000");
+    let brushSize = useRef(2);
+    let fontSize = useRef(15);
+    let size = useRef(2);
+    let color = useRef("#000000");
     let inputFileRef = useRef(null);
     let _mediaRecorder = useRef(null)
     let videoSource = useRef("")
-    let clickPos = useRef([]);
+    let penClickPos = useRef([]);
     let actionType = useRef("pen")
+    let drawClickPos = useRef([]);
     let drawType = useRef("none");
     let text = useRef("")
     let ctx = useRef(null);
+    let snapshots = useRef([]);
+    let zooms = useRef([]);
+    let scale = useRef(1);
 
     let canvas = createRef()
 
     const canvasWidth = 1080;
     const canvasHeight = 610;
+
 
     useEffect(() => {
         ctx.current = canvas.current.getContext("2d");
@@ -44,26 +47,9 @@ export default function App() {
         context.fillStyle = "#fff"
         context.fillRect(0, 0, 2000, 2000);
 
-        const mouseDown = () => setClicked(true)
-        const mouseUp = () => {
-            setClicked(false)
-            if (actionType.current !== "text") {
-                clickPos.current = []
-            }
-            ctx.current.closePath();
-        }
-        const clickEvent = (e) => {
-
-            if (actionType.current === "text" && text.current.length > 0) {
-                actionType.current = "pen"
-                updateColorAndSize()
-                text.current = ""
-            }
-        }
-
          const keyup = (e) => {
             if(e.key === 'z' && e.ctrlKey) {
-                console.log()
+                undo()
             }
             if (actionType.current === "text") {
                 if (e.key === "Enter") {
@@ -71,25 +57,19 @@ export default function App() {
                     updateColorAndSize()
                     text.current = ""
                 }
-                else {
+                else if (e.key.length === 1) {
                     text.current += e.key
-                    ctx.current.font = fontSize + "px Arial";
-                    ctx.current.fillStyle = brushColor
-                    ctx.current.fillText(e.key, clickPos.current[0] + 8 * text.current.length, clickPos.current[1]);
+                    ctx.current.font = Math.round(fontSize.current) + "px Arial";
+                    ctx.current.fillStyle = brushColor.current
+                    ctx.current.fillText(e.key, penClickPos.current[0] + Math.round(fontSize.current * 0.6) * text.current.length, penClickPos.current[1]);
                 }
             }
 
         }
 
-        window.addEventListener("click", clickEvent)
-        window.addEventListener("mousedown", mouseDown)
-        window.addEventListener("mouseup", mouseUp)
         window.addEventListener('keyup', keyup)
 
         return () => {
-            window.removeEventListener("mousedown", mouseDown)
-            window.removeEventListener("mouseup", mouseUp)
-            window.removeEventListener('click', clickEvent);
             window.removeEventListener('keyup', keyup)
 
 
@@ -103,14 +83,70 @@ export default function App() {
         let reader  = new FileReader();
         reader.onload = function(e)  {
             const img = new Image();
-            img.src = e.target.result;
-            img.addEventListener("load", (e) => {
-                ctx.current.drawImage(img, 100, 100);
+            img.src = e.target.result.toString();
+            img.addEventListener("load", () => {
+                ctx.current.drawImage(img, 20, 20);
 
             })
 
         }
         reader.readAsDataURL(inputFile);
+    }
+
+    function undo() {
+        if (!snapshots) {
+            return
+        }
+        const img = new Image();
+        img.src = snapshots.current.pop();
+        img.addEventListener("load", () => {
+            ctx.current.drawImage(img, 0, 0);
+
+        })
+    }
+
+    function resize(type) {
+        let src = zooms.current[0]
+        let curScale = 1
+        if (scale.current === 1) {
+            src = canvas.current.toDataURL()
+        }
+        if (type === '+') {
+            scale.current += 0.05;
+        }
+        else {
+            scale.current -= 0.05
+        }
+        curScale = scale.current
+
+        if (scale < 1) {
+            if (type === '+') {
+                if (!!zooms) {
+                    src = zooms.current.pop()
+                }
+            }
+            else {
+                curScale = scale.current
+            }
+        }
+        else if (scale > 1) {
+            if (type === '-') {
+                if (!!zooms) {
+                    src = zooms.current.pop()
+                }
+            }
+            else {
+                curScale = scale.current
+            }
+        }
+        const img = new Image();
+        img.src = src
+        img.addEventListener("load", () => {
+            ctx.current.scale(curScale, curScale)
+            ctx.current.drawImage(img, 0, 0);
+        })
+        ctx.current.scale(1, 1)
+        zooms.current.push(zooms.current)
     }
 
     useEffect(() => {
@@ -127,24 +163,30 @@ export default function App() {
     function updateColorAndSize() {
         let actionT = actionType.current
         if (actionT === "text") {
-            setFontSize(11 + 4 * size)
+            fontSize.current = 12 + 3 * size.current
         }
         else if (actionT === "pen") {
-            setBrushSize(1.5 + size * 0.5)
+            brushSize.current = 1.5 + size.current * 0.5
         }
         else if (actionT === "marker" || actionT === "eraser") {
-            setBrushSize(12 + size * 3)
+            brushSize.current = 12 + size.current * 3
         }
         if (actionT === "eraser") {
-            setBrushColor("#FFFFFF")
+            brushColor.current = "#FFFFFF"
         }
         else if (actionT === "pen" || actionT === "text") {
-            setBrushColor(color)
+            brushColor.current = color.current
         }
-        else setBrushColor(color + Math.round(Math.min(Math.max(0.2 || 1, 0), 1) * 255).toString(16).toUpperCase());
-
+        else brushColor.current = color.current + Math.round(Math.min(Math.max(0.2 || 1, 0), 1) * 255).toString(16).toUpperCase();
+        let context = ctx.current
+        context.fillStyle = brushColor.current
+        context.strokeStyle = brushColor.current
+        context.font = fontSize.current + "px Arial"
+        context.lineWidth = brushSize.current
+        penClickPos.current = []
+        context.closePath()
     }
-    function calcPos(e) {
+    function calcClickPos(e) {
         let rect = e.target.getBoundingClientRect();
         return [e.clientX - rect.left, e.clientY - rect.top];
     }
@@ -185,7 +227,6 @@ export default function App() {
             recordedChunks = [];
         };
         mediaRecorder.start(200); // For every 200ms the stream data will be stored in a separate chunk.
-        console.log(mediaRecorder)
         return mediaRecorder
     }
 
@@ -216,128 +257,156 @@ export default function App() {
                 <Row className={"up"} id={"canvasRow"} style={{marginBottom: "2%"}}>
                     <canvas width={canvasWidth}  ref={canvas} height={canvasHeight} style={{border: "3px solid black", borderRadius: "6px"}}
                             onMouseMove={(e) => {
-                                if (actionType.current === "text" || !isClicked) {
+                                if (actionType.current === "text" || !isClicked || drawType.current !== "none") {
                                     return
                                 }
-                                let pos = calcPos(e)
+                                let pos = calcClickPos(e)
                                 let context = ctx.current;
 
-                                let cPos = clickPos.current
-                                context.strokeStyle = brushColor;
-                                context.lineWidth = brushSize;
+                                let penPos = penClickPos.current
+                                context.strokeStyle = brushColor.current;
+                                context.lineWidth = brushSize.current;
                                 context.lineCap = 'round';
                                 context.beginPath();
-                                context.moveTo(cPos[cPos.length - 2], cPos[cPos.length - 1])
-                                clickPos.current.push(...calcPos(e))
+                                context.moveTo(penPos[penPos.length - 2], penPos[penPos.length - 1])
+                                penClickPos.current.push(...pos)
                                 context.lineTo(...pos);
 
                                 // Draws the line.
                                 context.stroke();
-
-                            }
                         }
-                    onClick={ (e) => {
-
-                        if (drawType.current !== "none" || actionType.current === "text") {
-                            clickPos.current.push(...calcPos(e))
+                     } onClick={(e) => {
+                        if (actionType.current === "text" && text.current.length > 0) {
+                            actionType.current = "pen"
+                            updateColorAndSize()
+                            text.current = ""
+                            return
                         }
+
+                        if (actionType.current === "text") {
+                            penClickPos.current.push(...calcClickPos(e))
+                        }
+
                         let context = ctx.current;
-                        let cPos = clickPos.current
-                        if (actionType.current !== "text" && drawType.current === "none") {
-                            context.strokeStyle = brushColor;
-                            context.lineWidth = brushSize;
+                        let drawT = drawType.current
+
+                        if (drawT !== "none") {
+                            drawClickPos.current.push(...calcClickPos(e))
+                        }
+
+                        let drawPos = drawClickPos.current
+
+
+                        if (actionType.current !== "text" && drawT !== "none") {
+                            context.strokeStyle = brushColor.current;
+                            context.lineWidth = brushSize.current;
                             context.lineCap = 'round';
                             context.beginPath();
-                            context.moveTo(cPos[cPos.length - 2], cPos[cPos.length - 1])
+                            context.moveTo(drawPos[drawPos.length - 2], drawPos[drawPos.length - 1])
                         }
 
 
-                        if (drawType.current === "line" && cPos.length === 4) {
-                            context.strokeStyle = brushColor
-                            context.lineWidth = brushSize * 3.75;
+                        if (drawT === "line" && drawPos.length === 4) {
+                            context.strokeStyle = brushColor.current
+                            context.lineWidth = brushSize.current * 3.75;
                             context.beginPath();
-                            context.moveTo(cPos[0], cPos[1]);
-                            context.lineTo(cPos[2], cPos[3]);
+                            context.moveTo(drawPos[0], drawPos[1]);
+                            context.lineTo(drawPos[2], drawPos[3]);
                             context.stroke();
                             drawType.current = "none"
+                            updateColorAndSize()
                         }
 
-                        else if (drawType.current === "square" && cPos.length === 6) {
-                            context.fillStyle = brushColor
-                            let top = cPos[1]
-                            let left = cPos[0];
+                        else if (drawT === "square" && drawPos.length === 6) {
+                            context.fillStyle = brushColor.current
+                            let top = drawPos[1]
+                            let left = drawPos[0];
                             let tm = top;
                             let lm = left
                             for (let i = 1; i < 3; i++) {
-                                top = Math.min(top, cPos[i * 2 + 1])
-                                tm = Math.max(top, cPos[i * 2 + 1])
-                                left = Math.min(left, cPos[i * 2])
-                                lm = Math.max(lm, cPos[i * 2])
+                                top = Math.min(top, drawPos[i * 2 + 1])
+                                tm = Math.max(top, drawPos[i * 2 + 1])
+                                left = Math.min(left, drawPos[i * 2])
+                                lm = Math.max(lm, drawPos[i * 2])
                             }
                             let size =  Math.min(lm - left, tm - top)
                             context.fillRect(left, top, size, size);
                             drawType.current = "none"
+                            updateColorAndSize()
                         }
 
-                        else if (drawType.current === "rectangle" && cPos.length === 4) {
-                            context.fillStyle = brushColor
-                            let top = cPos[1]
-                            let left = cPos[0];
+                        else if (drawT === "rectangle" && drawPos.length === 4) {
+                            context.fillStyle = brushColor.current
+                            let top = drawPos[1]
+                            let left = drawPos[0];
                             let tm = top;
                             let lm = left
                             for (let i = 1; i < 2; i++) {
-                                top = Math.min(top, cPos[i * 2 + 1])
-                                tm = Math.max(top, cPos[i * 2 + 1])
-                                left = Math.min(left, cPos[i * 2])
-                                lm = Math.max(lm, cPos[i * 2])
+                                top = Math.min(top, drawPos[i * 2 + 1])
+                                tm = Math.max(top, drawPos[i * 2 + 1])
+                                left = Math.min(left, drawPos[i * 2])
+                                lm = Math.max(lm, drawPos[i * 2])
                             }
                             context.fillRect(left, top, lm - left, tm - top);
                             drawType.current = "none"
+                            updateColorAndSize()
                         }
 
-                        else if (drawType.current === "triangle" && cPos.length === 6) {
-                            context.fillStyle = brushColor
+                        else if (drawT === "triangle" && drawPos.length === 6) {
+                            context.fillStyle = brushColor.current
                             context.beginPath();
-                            context.moveTo(cPos[0], cPos[1])
+                            context.moveTo(drawPos[0], drawPos[1])
                             for (let i = 1; i < 3; i++) {
-                                context.lineTo(cPos[i * 2], cPos[i * 2 + 1]);
+                                context.lineTo(drawPos[i * 2], drawPos[i * 2 + 1]);
                             }
                             context.closePath();
                             context.fill();
                             drawType.current = "none"
+                            updateColorAndSize()
                         }
 
-                        else if (drawType.current === "polygon") {
-                            context.fillStyle = brushColor
-                            context.strokeStyle = brushColor
-                            context.lineWidth = brushSize * 3.75;
+                        else if (drawT === "polygon") {
+                            context.fillStyle = brushColor.current
+                            context.strokeStyle = brushColor.current
+                            context.lineWidth = brushSize.current * 3.75;
                             context.lineCap = 'round';
 
+                            if (drawPos.length === 2) {
 
-
-                            if (cPos.length === 2) {
-
-                                context.moveTo(cPos[cPos.length - 2], cPos[cPos.length - 1]);
-                                context.lineTo(cPos[cPos.length - 2], cPos[cPos.length - 1]);
+                                context.moveTo(drawPos[0], drawPos[1]);
+                                context.lineTo(drawPos[0], drawPos[1]);
 
                                 context.stroke();
                                 context.beginPath();
-                                context.moveTo(cPos[0], cPos[1])
+                                context.moveTo(drawPos[0], drawPos[1])
                             }
                             else {
-                                context.lineTo(cPos[cPos.length - 2], cPos[cPos.length - 1])
-                                if (Math.pow(cPos[0] - cPos[cPos.length - 2], 2) +
-                                    Math.pow(cPos[1] - cPos[cPos.length - 1], 2) < 100) {
+                                context.lineTo(drawPos[drawPos.length - 2], drawPos[drawPos.length - 1])
+                                if (Math.pow(drawPos[0] - drawPos[drawPos.length - 2], 2) +
+                                    Math.pow(drawPos[1] - drawPos[drawPos.length - 1], 2) < 500) {
                                     context.closePath();
                                     context.fill();
                                     drawType.current = "none"
+                                    updateColorAndSize()
                                 }
                             }
 
                         }
+                     }
+                    } onMouseDown={() => {
+                        setClicked(true)
 
+                        snapshots.current.push(canvas.current.toDataURL());
+                    }} onMouseUp={ () => {
+                        setClicked(false)
+                        if (actionType.current !== "text" && drawType.current === 'none') {
+                            penClickPos.current = []
                         }
-                    }/>
+                        if (drawType.current === 'none') {
+                            ctx.current.closePath();
+                        }
+
+                    }}/>
                 </Row>
                 <Row>
                     <Col style={{marginRight: "25%"}}>
@@ -382,15 +451,16 @@ export default function App() {
                     <i className="fa-solid fa-trash" onClick={() => {
                         ctx.current.fillStyle = "#fff"
                         ctx.current.fillRect(0, 0, 2000, 2000);
-                        // TODO draw image
+                        updateColorAndSize()
                     }}></i>
-                    <i className="fa-solid fa-rotate-right"  onClick={() => console.log()}></i>
-                    <i className="fa-solid fa-arrow-pointer" onClick={() => console.log()}></i>
+                    <i className="fa-solid fa-rotate-right"  onClick={() => undo()}></i>
+                    <i className="fa-solid fa-arrow-pointer" onClick={() => resize("+")}></i>
                 </Row>
                 <Row align={"middle"} justify={"center"}>
                     <i className="fa-solid fa-copy"></i>
                     <i className="fa-solid fa-image" onClick={() => inputFileRef.current.click()}><input type='file' ref={inputFileRef} onChange={(e) => {
                         drawImage(e.target.files[0])
+                        updateColorAndSize()
                     }} style={{display: 'none'}}/></i>
                     <i className="fa-solid fa-a" onClick={() => {
                         actionType.current = "text"
@@ -409,71 +479,95 @@ export default function App() {
                 <hr/>
                 <Row align={"middle"} justify={"center"}>
                     <i className="fa-regular fa-square" style={{backgroundColor: "black", borderRadius: "3px"}} onClick={() => {
-                        setColor("#000000")
+                        color.current = "#000000"
                         updateColorAndSize()
                     }}></i>
                     <i className="fa-regular fa-square" style={{backgroundColor: "blue", borderRadius: "3px"}} onClick={() => {
-                        setColor("#0000FF")
+                        color.current = "#0000FF"
                         updateColorAndSize()
 
                     }}></i>
                     <i className="fa-regular fa-square" style={{backgroundColor: "green", borderRadius: "3px"}} onClick={() => {
-                        setColor("#00FF00")
+                        color.current = "#00FF00"
                         updateColorAndSize()
 
                     }}></i>
                 </Row>
                 <Row align={"middle"} justify={"center"}>
                     <i className="fa-regular fa-square" style={{backgroundColor: "yellow", borderRadius: "3px"}} onClick={() => {
-                        setColor("#FFFF00")
+                        color.current = "#FFFF00"
                         updateColorAndSize()
 
                     }}></i>
                     <i className="fa-regular fa-square" style={{backgroundColor: "orange", borderRadius: "3px"}} onClick={() => {
-                        setColor("#FFA500")
+                        color.current = "#FFA500"
                         updateColorAndSize()
 
                     }}></i>
                     <i className="fa-regular fa-square" style={{backgroundColor: "red", borderRadius: "3px"}} onClick={() => {
-                        setColor("#FF0000")
+                        color.current = "#FF0000"
                         updateColorAndSize()
 
                     }}></i>
                 </Row>
                 <hr/>
                 <Row align={"middle"} justify={"center"}>
-                    <i className="fa-regular fa-circle" style={{fontSize: "8px"}} onClick={()=> setSize(1)}></i>
-                    <i className="fa-regular fa-circle" style={{fontSize: "12px"}} onClick={()=> setSize(2)}></i>
-                    <i className="fa-regular fa-circle" style={{fontSize: "16px"}} onClick={()=> setSize(3)}></i>
+                    <i className="fa-regular fa-circle" style={{fontSize: "8px"}} onClick={()=> {
+                        size.current = 1
+                        updateColorAndSize()
+
+                    }}></i>
+                    <i className="fa-regular fa-circle" style={{fontSize: "12px"}} onClick={()=> {
+                        size.current = 2
+                        updateColorAndSize()
+
+                    }}></i>
+                    <i className="fa-regular fa-circle" style={{fontSize: "16px"}} onClick={()=> {
+                        size.current = 3
+                        updateColorAndSize()
+                    }}></i>
                 </Row>
                 <Row align={"middle"} justify={"center"}>
-                    <i className="fa-regular fa-circle" style={{fontSize: "20px"}} onClick={()=> setSize(4)}></i>
-                    <i className="fa-regular fa-circle" style={{fontSize: "24px"}} onClick={()=> setSize(5)}></i>
-                    <i className="fa-regular fa-circle" style={{fontSize: "28px"}} onClick={()=> setSize(6)}></i>
+                    <i className="fa-regular fa-circle" style={{fontSize: "20px"}} onClick={()=> {
+                        size.current = 4
+                        updateColorAndSize()
+                    }}></i>
+                    <i className="fa-regular fa-circle" style={{fontSize: "24px"}} onClick={()=> {
+                        size.current = 5
+                        updateColorAndSize()
+                    }}></i>
+                    <i className="fa-regular fa-circle" style={{fontSize: "28px"}} onClick={()=> {
+                        size.current = 6
+                        updateColorAndSize()
+                    }}></i>
                 </Row>
                 <hr/>
                 <Row align={"middle"} justify={"center"}>
                     <i className="fa-solid fa-arrows-left-right" onClick={() => {
-                       clickPos.current = []
+                        drawClickPos.current = []
                         drawType.current = "line"
+
                     }}></i>
                     <i className="fa-solid fa-caret-up" onClick={() => {
-                        clickPos.current = []
+                        drawClickPos.current = []
                         drawType.current = "triangle"
+
                     }}></i>
                     <i className="fa-solid fa-square" onClick={() => {
-                        clickPos.current = []
+                        drawClickPos.current = []
                         drawType.current = "square"
+
                     }}></i>
                 </Row>
                 <Row align={"middle"} justify={"center"}>
                     <i className="fa-solid fa-rectangle-xmark" onClick={() => {
-                        clickPos.current = []
+                        drawClickPos.current = []
                         drawType.current = "rectangle"
                     }}></i>
                     <i className="fa-solid fa-draw-polygon" onClick={() => {
-                        clickPos.current = []
+                        drawClickPos.current = []
                         drawType.current = "polygon"
+
                     }}></i>
                 </Row>
                 <hr/>
